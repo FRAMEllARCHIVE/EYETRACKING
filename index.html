@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pupil Tracking with TensorFlow.js</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
+
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+        video, canvas {
+            border: 2px solid black;
+            margin-top: 10px;
+        }
+        #controls {
+            margin-top: 10px;
+        }
+        button {
+            font-size: 16px;
+            padding: 10px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        #status {
+            font-size: 18px;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Pupil Tracking with TensorFlow.js</h1>
+    <video id="video" width="640" height="480" autoplay playsinline></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+    
+    <div id="controls">
+        <button onclick="startTracking()">Start Tracking</button>
+        <button onclick="stopTracking()">Stop Tracking</button>
+    </div>
+
+    <p id="status">Tracking status: <span id="tracking-status">Loading model...</span></p>
+
+    <script>
+        let video = document.getElementById("video");
+        let canvas = document.getElementById("canvas");
+        let ctx = canvas.getContext("2d");
+        let statusText = document.getElementById("tracking-status");
+
+        const ROI = { x: 200, y: 150, width: 100, height: 100 };
+        let pupilInROI = false;
+        let lastSeenTime = 0;
+        let faceMesh;
+        let tracking = false;
+
+        async function setupCamera() {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+            video.srcObject = stream;
+            return new Promise(resolve => video.onloadeddata = resolve);
+        }
+
+        async function loadModel() {
+            console.log("Loading MediaPipe...");
+
+            faceMesh = new FaceMesh({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+            });
+
+            faceMesh.setOptions({
+                refineLandmarks: true,
+                maxNumFaces: 1
+            });
+
+            faceMesh.onResults((results) => {
+                console.log("Model results received.");
+                model = results;
+            });
+
+            await faceMesh.initialize();
+            statusText.innerText = "Model loaded. Click Start.";
+        }
+
+        function startTracking() {
+            if (faceMesh) {
+                tracking = true;
+                trackPupil();
+                statusText.innerText = "Tracking pupil...";
+            }
+        }
+
+        function stopTracking() {
+            tracking = false;
+            statusText.innerText = "Tracking stopped.";
+        }
+
+        async function trackPupil() {
+            if (!tracking) return;
+
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            await faceMesh.send({ image: video });
+
+            if (model && model.multiFaceLandmarks.length > 0) {
+                for (const face of model.multiFaceLandmarks) {
+                    const keypoints = face;
+
+                    let leftIris = keypoints[468];
+                    let rightIris = keypoints[473];
+
+                    if (leftIris && rightIris) {
+                        let cx = (leftIris.x + rightIris.x) / 2;
+                        let cy = (leftIris.y + rightIris.y) / 2;
+
+                        ctx.beginPath();
+                        ctx.arc(cx * canvas.width, cy * canvas.height, 5, 0, 2 * Math.PI);
+                        ctx.fillStyle = "red";
+                        ctx.fill();
+
+                        if (cx * canvas.width >= ROI.x && cx * canvas.width <= ROI.x + ROI.width &&
+                            cy * canvas.height >= ROI.y && cy * canvas.height <= ROI.y + ROI.height) {
+                            
+                            if (!pupilInROI) {
+                                lastSeenTime = performance.now();
+                                pupilInROI = true;
+                            } else if (performance.now() - lastSeenTime > 1000) {
+                                statusText.innerText = "Pupil has lingered in ROI for more than 1 second!";
+                            }
+                        } else {
+                            pupilInROI = false;
+                            statusText.innerText = "Tracking pupil...";
+                        }
+                    }
+                }
+            }
+
+            ctx.strokeStyle = "blue";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(ROI.x, ROI.y, ROI.width, ROI.height);
+
+            requestAnimationFrame(trackPupil);
+        }
+
+        async function enableWebGL() {
+            const backend = await tf.getBackend();
+            if (backend !== "webgl") {
+                await tf.setBackend("webgl");
+                console.log("WebGL enabled for better performance");
+            }
+        }
+
+        async function init() {
+            await enableWebGL();
+            await setupCamera();
+            await loadModel();
+        }
+
+        init();
+    </script>
+</body>
+</html>
