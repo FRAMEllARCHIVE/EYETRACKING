@@ -157,10 +157,10 @@
                         Math.pow(rightOuterCanvas.y - leftOuterCanvas.y, 2)
                     );
 
-                    let segmentLength = topLineLength / 10;
+                    let segmentLength = topLineLength / 9;
 
-                    for (let i = 0; i <= 8; i++) {
-                        let ratio = i / 8;
+                    for (let i = 0; i <= 9; i++) {
+                        let ratio = i / 9;
                         let x = leftOuterCanvas.x + (rightOuterCanvas.x - leftOuterCanvas.x) * ratio;
                         let y = leftOuterCanvas.y + (rightOuterCanvas.y - leftOuterCanvas.y) * ratio;
 
