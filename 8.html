@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FaceMesh Tracking</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
+
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+            background-color: black;
+        }
+        video {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            width: 120px;
+            height: 120px;
+            border: 2px solid white;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        canvas {
+            border: 2px solid black;
+            margin-top: 10px;
+            display: block;
+            margin: auto;
+            border-radius: 22px;
+        }
+        #controls {
+            margin-top: 44px;
+        }
+        button {
+            font-size: 16px;
+            padding: 10px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        #status {
+            font-size: 18px;
+            margin-top: 10px;
+            font-weight: bold;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+
+    <div id="controls">
+        <button onclick="startTracking()">Start Tracking</button>
+        <button onclick="stopTracking()">Stop Tracking</button>
+    </div>
+
+    <p id="status">Tracking status: <span id="tracking-status">Loading model...</span></p>
+
+    <script>
+        let video = document.getElementById("video");
+        let canvas = document.getElementById("canvas");
+        let ctx = canvas.getContext("2d");
+        let statusText = document.getElementById("tracking-status");
+
+        let faceMesh;
+        let tracking = false;
+
+        async function setupCamera() {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+            video.srcObject = stream;
+            return new Promise(resolve => video.onloadeddata = resolve);
+        }
+
+        async function loadModel() {
+            faceMesh = new FaceMesh({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+            });
+
+            faceMesh.setOptions({
+                refineLandmarks: true,
+                maxNumFaces: 1
+            });
+
+            faceMesh.onResults((results) => {
+                model = results;
+            });
+
+            await faceMesh.initialize();
+            statusText.innerText = "Model loaded. Click Start.";
+        }
+
+        function startTracking() {
+            if (faceMesh) {
+                tracking = true;
+                canvas.style.display = "block";
+                trackGaze();
+                statusText.innerText = "Tracking gaze direction...";
+            }
+        }
+
+        function stopTracking() {
+            tracking = false;
+            statusText.innerText = "Tracking stopped.";
+            canvas.style.display = "none";
+        }
+
+        async function trackGaze() {
+            if (!tracking) return;
+
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            await faceMesh.send({ image: video });
+
+            if (model && model.multiFaceLandmarks.length > 0) {
+                for (const face of model.multiFaceLandmarks) {
+                    const keypoints = face;
+
+                    let leftOuter = keypoints[130];
+                    let rightOuter = keypoints[359];
+                    let mouthCenter = keypoints[13];
+
+                    let leftOuterCanvas = {
+                        x: leftOuter.x * canvas.width,
+                        y: leftOuter.y * canvas.height
+                    };
+                    let rightOuterCanvas = {
+                        x: rightOuter.x * canvas.width,
+                        y: rightOuter.y * canvas.height
+                    };
+                    let mouthCanvas = {
+                        x: mouthCenter.x * canvas.width,
+                        y: mouthCenter.y * canvas.height
+                    };
+
+                    ctx.strokeStyle = "red";
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(leftOuterCanvas.x, leftOuterCanvas.y);
+                    ctx.lineTo(rightOuterCanvas.x, rightOuterCanvas.y);
+                    ctx.lineTo(mouthCanvas.x, mouthCanvas.y);
+                    ctx.closePath();
+                    ctx.stroke();
+
+                    let topLineLength = Math.sqrt(
+                        Math.pow(rightOuterCanvas.x - leftOuterCanvas.x, 2) +
+                        Math.pow(rightOuterCanvas.y - leftOuterCanvas.y, 2)
+                    );
+
+                    let segmentLength = topLineLength / 9;
+
+                    for (let i = 0; i <= 8; i++) {
+                        let ratio = i / 8;
+                        let x = leftOuterCanvas.x + (rightOuterCanvas.x - leftOuterCanvas.x) * ratio;
+                        let y = leftOuterCanvas.y + (rightOuterCanvas.y - leftOuterCanvas.y) * ratio;
+
+                        ctx.fillStyle = "black";
+                        ctx.beginPath();
+                        ctx.arc(x, y, 1, 0, 1 * Math.PI);
+                        ctx.fill();
+                    }
+
+                    let leftIris = keypoints[468];
+                    let leftIrisCanvas = {
+                        x: leftIris.x * canvas.width,
+                        y: leftIris.y * canvas.height
+                    };
+                    ctx.fillStyle = "blue";
+                    ctx.beginPath();
+                    ctx.arc(leftIrisCanvas.x, leftIrisCanvas.y, 3, 0, 2 * Math.PI);
+                    ctx.fill();
+
+                    let rightIris = keypoints[473];
+                    let rightIrisCanvas = {
+                        x: rightIris.x * canvas.width,
+                        y: rightIris.y * canvas.height
+                    };
+                    ctx.fillStyle = "red";
+                    ctx.beginPath();
+                    ctx.arc(rightIrisCanvas.x, rightIrisCanvas.y, 3, 0, 2 * Math.PI);
+                    ctx.fill();
+
+                    let faceVectorX = rightOuterCanvas.x - leftOuterCanvas.x;
+                    let faceVectorY = mouthCanvas.y - (leftOuterCanvas.y + rightOuterCanvas.y) / 2;
+
+                    let yaw = faceVectorX > 0 ? "Right" : "Left";
+                    let pitch = faceVectorY > 0 ? "Down" : "Up";
+
+                    statusText.innerText = `Face Direction: Yaw: ${yaw}, Pitch: ${pitch}`;
+                }
+            }
+
+            requestAnimationFrame(trackGaze);
+        }
+
+        async function enableWebGL() {
+            const backend = await tf.getBackend();
+            if (backend !== "webgl") {
+                await tf.setBackend("webgl");
+                console.log("WebGL enabled for better performance");
+            }
+        }
+
+        async function init() {
+            await enableWebGL();
+            await setupCamera();
+            await loadModel();
+        }
+
+        init();
+    </script>
+</body>
+</html>
