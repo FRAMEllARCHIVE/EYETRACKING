@@ -15,7 +15,7 @@
             font-family: Arial, sans-serif;
             background-color: black;
         }
-        .video {
+        video {
             position: fixed;
             top: 10px;
             right: 10px;
@@ -25,7 +25,7 @@
             border: 2px solid white;
             object-fit: cover;
         }
-        .canvas {
+        canvas {
             border: 2px solid black;
             margin-top: 10px;
             display: none;
@@ -50,7 +50,6 @@
     </style>
 </head>
 <body>
-    <h1></h1>
     <video id="video" width="640" height="480" autoplay playsinline></video>
     <canvas id="canvas" width="640" height="480"></canvas>
     
@@ -69,12 +68,7 @@
 
         let faceMesh;
         let tracking = false;
-
-        const LEFT_EYE_REGION = { x1: 160, y1: 120, x2: 200, y2: 160 };
-        const RIGHT_EYE_REGION = { x1: 440, y1: 120, x2: 480, y2: 160 };
-
-        let lastSeenTime = 0;
-        let eyeDirection = 'Neutral';
+        let model;
 
         async function setupCamera() {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
@@ -104,7 +98,6 @@
             if (faceMesh) {
                 tracking = true;
                 canvas.style.display = "block";
-                video.style.display = "none";
                 trackGaze();
                 statusText.innerText = "Tracking gaze direction...";
             }
@@ -114,57 +107,23 @@
             tracking = false;
             statusText.innerText = "Tracking stopped.";
             canvas.style.display = "none";
-            video.style.display = "none";
         }
 
         async function trackGaze() {
             if (!tracking) return;
 
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
             await faceMesh.send({ image: video });
 
             if (model && model.multiFaceLandmarks.length > 0) {
                 for (const face of model.multiFaceLandmarks) {
                     const keypoints = face;
 
-                    let leftInner = keypoints[33];
-                    let leftOuter = keypoints[133];
-                    let rightInner = keypoints[362];
-                    let rightOuter = keypoints[263];
-                    let leftTop = keypoints[159];
-                    let leftBottom = keypoints[145];
-                    let rightTop = keypoints[386];
-                    let rightBottom = keypoints[374];
-
-                    let leftEyeCenterX = (leftOuter.x + leftInner.x + leftTop.x + leftBottom.x) / 4;
-                    let leftEyeCenterY = (leftOuter.y + leftInner.y + leftTop.y + leftBottom.y) / 4;
-
-                    let rightEyeCenterX = (rightOuter.x + rightInner.x + rightTop.x + rightBottom.x) / 4;
-                    let rightEyeCenterY = (rightOuter.y + rightInner.y + rightTop.y + rightBottom.y) / 4;
-
-                    let leftCx = leftEyeCenterX * canvas.width;
-                    let leftCy = leftEyeCenterY * canvas.height;
-
-                    let rightCx = rightEyeCenterX * canvas.width;
-                    let rightCy = rightEyeCenterY * canvas.height;
-
-                    ctx.beginPath();
-                    ctx.arc(leftCx, leftCy, 5, 0, 2 * Math.PI);
-                    ctx.fillStyle = "green";
-                    ctx.fill();
-
-                    ctx.beginPath();
-                    ctx.arc(rightCx, rightCy, 5, 0, 2 * Math.PI);
-                    ctx.fillStyle = "green";
-                    ctx.fill();
-
                     let leftIris = keypoints[468];
                     let rightIris = keypoints[473];
 
                     let leftIrisX = leftIris.x * canvas.width;
                     let leftIrisY = leftIris.y * canvas.height;
-
                     let rightIrisX = rightIris.x * canvas.width;
                     let rightIrisY = rightIris.y * canvas.height;
 
@@ -177,36 +136,6 @@
                     ctx.arc(rightIrisX, rightIrisY, 5, 0, 2 * Math.PI);
                     ctx.fillStyle = "blue";
                     ctx.fill();
-
-                    let leftGazeDirection = '';
-                    let rightGazeDirection = '';
-
-                    if (leftIrisX < leftCx - 5) {
-                        leftGazeDirection = 'Looking Left';
-                    } else if (leftIrisX > leftCx + 5) {
-                        leftGazeDirection = 'Looking Right';
-                    } else if (leftIrisY < leftCy - 5) {
-                        leftGazeDirection = 'Looking Up';
-                    } else if (leftIrisY > leftCy + 5) {
-                        leftGazeDirection = 'Looking Down';
-                    } else {
-                        leftGazeDirection = 'Neutral';
-                    }
-
-                    if (rightIrisX < rightCx - 5) {
-                        rightGazeDirection = 'Looking Left';
-                    } else if (rightIrisX > rightCx + 5) {
-                        rightGazeDirection = 'Looking Right';
-                    } else if (rightIrisY < rightCy - 5) {
-                        rightGazeDirection = 'Looking Up';
-                    } else if (rightIrisY > rightCy + 5) {
-                        rightGazeDirection = 'Looking Down';
-                    } else {
-                        rightGazeDirection = 'Neutral';
-                    }
-
-                    eyeDirection = `Left eye: ${leftGazeDirection}, Right eye: ${rightGazeDirection}`;
-                    statusText.innerText = `Eye Direction: ${eyeDirection}`;
                 }
             }
 
